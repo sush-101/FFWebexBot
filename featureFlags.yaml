@@ -1,0 +1,15 @@
+analyzer-new-ux-enable:
+  default: on
+  createdon: 1693446913
+
+analyzer-ui-enable-timepicker:
+  default: on
+  createdon: 1693274113
+
+analyzer-ui-enable-36months:
+  default: on
+  createdon: 1693364113
+
+flaglessthan3months:
+  default: off
+  createdon: 1701494249

@@ -1,5 +1,9 @@
 //Webex Bot Starter - featuring the webex-node-bot-framework - https://www.npmjs.com/package/webex-node-bot-framework
 require("dotenv").config();
+const { exec } = require("child_process");
+const cron = require("node-cron");
+const fs = require("fs");
+const yaml = require("js-yaml");
 var framework = require("webex-node-bot-framework");
 var webhook = require("webex-node-bot-framework/webhook");
 var express = require("express");
@@ -8,10 +12,28 @@ var app = express();
 app.use(bodyParser.json());
 app.use(express.static("images"));
 const config = {
-  webhookUrl: process.env.WEBHOOKURL,
+  // webhookUrl: process.env.WEBHOOKURL,
   token: process.env.BOTTOKEN,
-  port: process.env.PORT,
+  // port: process.env.PORT,
 };
+
+const yamlFilePath = "./featureFlags.yaml";
+let oldFeatureFlags;
+const threeMonthsInSeconds = 90 * 24 * 60 * 60;
+let bots=[]
+// cron.schedule("* * * * *", async () => {
+//   console.log("Running daily task to send Feature Flags card");
+//   try {
+//     for (const bot of bots) {
+//       sendCardWithoutCommand(bot);
+//       console.log(`Feature Flags card sent successfully for bot: ${bot.botName}`);
+//     }
+//     console.log("Feature Flags card sent successfully");
+//   } catch (error) {
+//     console.error("Error in daily task:", error.message);
+//   }
+// });
+// process.stdin.resume();
 
 // init framework
 var framework = new framework(config);
@@ -26,6 +48,16 @@ framework.on("initialized", () => {
 // If actorId is set, it means that user has just added your bot to a new space
 // If not, the framework has discovered your bot in an existing space
 framework.on("spawn", (bot, id, actorId) => {
+  bots.push(bot);
+  // Schedule the cron job after the bot is spawned
+  cron.schedule("*/2 * * * *", async () => {
+    console.log(`Running daily task to send Feature Flags card for bot: ${bot.room.title}`);
+    try {
+      sendCardWithoutCommand(bot);
+    } catch (error) {
+      console.error(`Error in daily task for bot ${bot.room.title}:`, error.message);
+    }
+  });
   if (!actorId) {
     // don't say anything here or your bot's spaces will get
     // spammed every time your server is restarted
@@ -36,7 +68,7 @@ framework.on("spawn", (bot, id, actorId) => {
     // When actorId is present it means someone added your bot got added to a new space
     // Lets find out more about them..
     var msg =
-      "You can say `help` to get the list of words I am able to respond to.";
+      "I notify at 4:00PM everyday the feature flags eligible for cleanup. Cleanup actions are performed based on your consent.";
     bot.webex.people
       .get(actorId)
       .then((user) => {
@@ -54,7 +86,7 @@ framework.on("spawn", (bot, id, actorId) => {
           bot.say("markdown", msg);
         } else {
           let botName = bot.person.displayName;
-          msg += `\n\nDon't forget, in order for me to see your messages in this group space, be sure to *@mention* ${botName}.`;
+          // msg += `\n\nDon't forget, in order for me to see your messages in this group space, be sure to *@mention* ${botName}.`;
           bot.say("markdown", msg);
         }
       });
@@ -70,189 +102,173 @@ framework.on("log", (msg) => {
   console.log(msg);
 });
 
-// Process incoming messages
-// Each hears() call includes the phrase to match, and the function to call if webex mesages
-// to the bot match that phrase.
-// An optional 3rd parameter can be a help string used by the frameworks.showHelp message.
-// An optional fourth (or 3rd param if no help message is supplied) is an integer that
-// specifies priority.   If multiple handlers match they will all be called unless the priority
-// was specified, in which case, only the handler(s) with the lowest priority will be called
-
-/* On mention with command
-ex User enters @botname framework, the bot will write back in markdown
+/* Send card with FF details and the input text box
+ex Bot will respond with a card containing FF details - https://developer.webex.com/docs/api/guides/cards
+User can then enter text in the input box
 */
-framework.hears(
-  "framework",
-  (bot) => {
-    console.log("framework command received");
-    bot.say(
-      "markdown",
-      "The primary purpose for the [webex-node-bot-framework](https://github.com/jpjpjp/webex-node-bot-framework) was to create a framework based on the [webex-jssdk](https://webex.github.io/webex-js-sdk) which continues to be supported as new features and functionality are added to Webex. This version of the project was designed with two themes in mind: \n\n\n * Mimimize Webex API Calls. The original flint could be quite slow as it attempted to provide bot developers rich details about the space, membership, message and message author. This version eliminates some of that data in the interests of efficiency, (but provides convenience methods to enable bot developers to get this information if it is required)\n * Leverage native Webex data types. The original flint would copy details from the webex objects such as message and person into various flint objects. This version simply attaches the native Webex objects. This increases the framework's efficiency and makes it future proof as new attributes are added to the various webex DTOs "
-    );
-  },
-  "**framework**: (learn more about the Webex Bot Framework)",
-  0
-);
-
-/* On mention with command, using other trigger data, can use lite markdown formatting
-ex User enters @botname 'info' phrase, the bot will provide personal details
-*/
-framework.hears(
-  "info",
-  (bot, trigger) => {
-    console.log("info command received");
-    //the "trigger" parameter gives you access to data about the user who entered the command
-    let personAvatar = trigger.person.avatar;
-    let personEmail = trigger.person.emails[0];
-    let personDisplayName = trigger.person.displayName;
-    let outputString = `Here is your personal information: \n\n\n **Name:** ${personDisplayName}  \n\n\n **Email:** ${personEmail} \n\n\n **Avatar URL:** ${personAvatar}`;
-    bot.say("markdown", outputString);
-  },
-  "**info**: (get your personal details)",
-  0
-);
-
-/* On mention with bot data 
-ex User enters @botname 'space' phrase, the bot will provide details about that particular space
-*/
-framework.hears(
-  "space",
-  (bot) => {
-    console.log("space. the final frontier");
-    let roomTitle = bot.room.title;
-    let spaceID = bot.room.id;
-    let roomType = bot.room.type;
-
-    let outputString = `The title of this space: ${roomTitle} \n\n The roomID of this space: ${spaceID} \n\n The type of this space: ${roomType}`;
-
-    console.log(outputString);
-    bot
-      .say("markdown", outputString)
-      .catch((e) => console.error(`bot.say failed: ${e.message}`));
-  },
-  "**space**: (get details about this space) ",
-  0
-);
-
-/* 
-   Say hi to every member in the space
-   This demonstrates how developers can access the webex
-   sdk to call any Webex API.  API Doc: https://webex.github.io/webex-js-sdk/api/
-*/
-framework.hears(
-  "say hi to everyone",
-  (bot) => {
-    console.log("say hi to everyone.  Its a party");
-    // Use the webex SDK to get the list of users in this space
-    bot.webex.memberships
-      .list({ roomId: bot.room.id })
-      .then((memberships) => {
-        for (const member of memberships.items) {
-          if (member.personId === bot.person.id) {
-            // Skip myself!
-            continue;
-          }
-          let displayName = member.personDisplayName
-            ? member.personDisplayName
-            : member.personEmail;
-          bot.say(`Hello ${displayName}`);
-        }
-      })
-      .catch((e) => {
-        console.error(`Call to sdk.memberships.get() failed: ${e.messages}`);
-        bot.say("Hello everybody!");
-      });
-  },
-  "**say hi to everyone**: (everyone gets a greeting using a call to the Webex SDK)",
-  0
-);
-
-// Buttons & Cards data
-let cardJSON = {
-  $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-  type: "AdaptiveCard",
-  version: "1.0",
-  body: [
-    {
-      type: "ColumnSet",
-      columns: [
-        {
-          type: "Column",
-          width: "5",
-          items: [
-            {
-              type: "Image",
-              url: "Your avatar appears here!",
-              size: "large",
-              horizontalAlignment: "Center",
-              style: "person",
-            },
-            {
-              type: "TextBlock",
-              text: "Your name will be here!",
-              size: "medium",
-              horizontalAlignment: "Center",
-              weight: "Bolder",
-            },
-            {
-              type: "TextBlock",
-              text: "And your email goes here!",
-              size: "small",
-              horizontalAlignment: "Center",
-              isSubtle: true,
-              wrap: false,
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
-
-/* On mention with card example
-ex User enters @botname 'card me' phrase, the bot will produce a personalized card - https://developer.webex.com/docs/api/guides/cards
-*/
-framework.hears(
-  "card me",
-  (bot, trigger) => {
-    console.log("someone asked for a card");
-    let avatar = trigger.person.avatar;
-
-    cardJSON.body[0].columns[0].items[0].url = avatar
-      ? avatar
-      : `${config.webhookUrl}/missing-avatar.jpg`;
-    cardJSON.body[0].columns[0].items[1].text = trigger.person.displayName;
-    cardJSON.body[0].columns[0].items[2].text = trigger.person.emails[0];
+const sendCardWithoutCommand = (bot, trigger) => {
+  console.log("someone asked for a form");
+  oldFeatureFlags = getOldFeatureFlags(yamlFilePath);
+  const oldFeatureFlagsString = oldFeatureFlags
+    .map((ff) => `${ff.name}: \n${ff.age}`)
+    .join("\n");
+  console.log("Feature Flags eligible for removal:", oldFeatureFlagsString);
+  const myCardJSON = {
+    $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+    type: "AdaptiveCard",
+    version: "1.0",
+    body: [
+      {
+        type: "ColumnSet",
+        columns: [
+          {
+            type: "Column",
+            width: 2,
+            items: [
+              {
+                type: "TextBlock",
+                text: "Below are the FF eligible for removal",
+                weight: "bolder",
+                size: "medium",
+                wrap: true,
+              },
+              {
+                type: "TextBlock",
+                text: oldFeatureFlagsString,
+                wrap: true,
+              },
+              {
+                type: "TextBlock",
+                text: "Enter the FF to remove separated by comma",
+                isSubtle: true,
+                size: "small",
+                wrap: true,
+              },
+              {
+                type: "Input.Text",
+                id: "FeaturesToRemove",
+                placeholder: "FF1,FF2",
+                isSubtle: true,
+                size: "small",
+              },
+            ],
+          },
+          {
+            type: "Column",
+            width: 1,
+            items: [
+              {
+                type: "Image",
+                url: "https://upload.wikimedia.org/wikipedia/commons/4/44/FeatureFlag.png",
+                size: "auto",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    actions: [
+      {
+        type: "Action.Submit",
+        title: "Remove",
+      },
+    ],
+  };
+ if(oldFeatureFlags.length > 0){
     bot.sendCard(
-      cardJSON,
+      myCardJSON,
       "This is customizable fallback text for clients that do not support buttons & cards"
     );
+    console.log(`Feature Flags card sent successfully for bot: ${bot.room.title}`);
+  }else{
+    bot.say('No Feature Flags eligible for removal');
+  }
+};
+
+framework.hears(
+  "send me a form",
+  (bot, trigger) => {
+    // This callback is called if a user enters any text that includes the word 'help'
+    // Send a card to the user.
+    sendCardWithoutCommand(bot, trigger);
   },
-  "**card me**: (a cool card!)",
+  "**send me a form**: (a cool form!)",
   0
 );
 
-/* On mention reply example
-ex User enters @botname 'reply' phrase, the bot will post a threaded reply
-*/
-framework.hears(
-  "reply",
-  (bot, trigger) => {
-    console.log("someone asked for a reply.  We will give them two.");
-    bot.reply(
-      trigger.message,
-      "This is threaded reply sent using the `bot.reply()` method.",
-      "markdown"
-    );
-    var msg_attach = {
-      text: "This is also threaded reply with an attachment sent via bot.reply(): ",
-      file: "https://media2.giphy.com/media/dTJd5ygpxkzWo/giphy-downsized-medium.gif",
-    };
-    bot.reply(trigger.message, msg_attach);
-  },
-  "**reply**: (have bot reply to your message)",
-  0
-);
+// Process a submitted card
+framework.on("attachmentAction", (bot, trigger) => {
+  let featureList = [];
+  const FeaureInput = trigger.attachmentAction.inputs.FeaturesToRemove;
+
+  if (FeaureInput && FeaureInput.trim() !== "") {
+    // Split the nameInput based on commas and store in the nameList
+    const features = FeaureInput.split(",").map((feature) => feature.trim());
+
+    // Add the names to the list
+    featureList.push(...features);
+  }
+  const featuresString = featureList.join(",");
+  console.log( `triggerred jenkins job for removal: ${featuresString}`);
+  let command = `curl -I -u supatlol:11173df0b8b0b7e3104794722b3782a53f "https://engci-private-sjc.cisco.com/jenkins/ccbu-cc-one/view/analyzer-ui-jobs/job/Analyzer-ui-k8s/job/Analyzer-Util-Jobs/job/FF-Cleanup-From-SourceCode/buildWithParameters?token=dummytoken&FeautureFlags=${featuresString}"`;
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+        console.log(`error: ${error.message}`);
+        return;
+    }
+    if (stderr) {
+        console.log(`stderr: ${stderr}`);
+        return;
+    }
+    console.log(`stdout: ${stdout}`);
+  });
+  // bot.say(`Got an attachmentAction:\n${JSON.stringify(trigger.attachmentAction, null, 2)}`);
+  bot.say(`Triggered jenkins to remove FF: \n${featureList}`);
+});
+
+function getOldFeatureFlags(filePath) {
+  try {
+    // Read the YAML file
+    const yamlContent = fs.readFileSync(filePath, "utf8");
+    console.log(`yamlContent: ${yamlContent}`);
+    // Parse YAML content
+    const data = yaml.load(yamlContent);
+    console.log(`data: ${data}`);
+    // Get current timestamp
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    console.log(`Object.keys(data): ${Object.keys(data)}`);
+    // Filter Feature Flags older than 3 months
+    const oldFeatureFlags = Object.keys(data)
+      .filter((ffName) => {
+        const createdTimestamp = data[ffName].createdon;
+        // Calculate the difference in seconds
+        const diffInSeconds = currentTimestamp - createdTimestamp;
+        console.log(
+          `ffName: ${ffName} currentTimestamp: ${currentTimestamp} createdTimestamp: ${createdTimestamp} diffInSeconds: ${diffInSeconds}`
+        );
+
+        // 3 months is approximately 90 days
+        console.log(`threeMonthsInSeconds: ${threeMonthsInSeconds}`);
+        return diffInSeconds > threeMonthsInSeconds;
+      })
+      .map((ffName) => ({
+        name: ffName,
+        age: secondsToHumanReadable(currentTimestamp - data[ffName].createdon),
+        // defaultMode: data[ffName].default
+      }));
+
+    return oldFeatureFlags;
+  } catch (error) {
+    console.error("Error reading or parsing YAML file:", error.message);
+    return [];
+  }
+}
+
+function secondsToHumanReadable(seconds) {
+  const months = Math.floor(seconds / (30 * 24 * 60 * 60));
+  const days = Math.floor((seconds % (30 * 24 * 60 * 60)) / (24 * 60 * 60));
+  return `${months} months, ${days} days`;
+}
 
 /* On mention with command
 ex User enters @botname help, the bot will write back in markdown
@@ -302,6 +318,16 @@ app.get("/", (req, res) => {
 });
 
 app.post("/", webhook(framework));
+
+app.post("/FFDetails", (req, res) => {
+  // Handle the incoming POST request data (req.body)
+  console.log("Received POST request for FFDetails:", req.body);
+
+  // Add your logic here to process the received data
+
+  // Send a response (optional)
+  res.status(200).json({ message: "POST request received successfully" });
+});
 
 var server = app.listen(config.port, () => {
   framework.debug("framework listening on port %s", config.port);
